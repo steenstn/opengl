@@ -4,6 +4,7 @@
 #include <gtc/matrix_transform.hpp>
 #include <gtc/type_ptr.hpp>
 #include <iostream>
+#include "Shader.h"
 
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -16,31 +17,8 @@ const unsigned int SCR_HEIGHT = 600;
 float red = 0.0f;
 float x = 0.0f;
 float y = 0.0f;
+float z = 0.0f;
 float rotation = 0.0f;
-
-const char *vertexShaderSource = "#version 330 core\n"
-"layout (location = 0) in vec3 aPos;\n"
-"layout (location = 1) in vec3 aNormal;"
-"uniform mat4 transform;\n"
-"uniform mat4 projection;\n"
-"uniform mat4 view;\n"
-"out vec3 Normal;\n"
-"void main()\n"
-"{\n"
-"   gl_Position = projection * view * transform * vec4(aPos, 1.0f);\n"
-"	Normal = mat3(transpose(inverse(transform))) * aNormal;"
-"}\0";
-const char *fragmentShaderSource = "#version 330 core\n"
-"out vec4 FragColor;\n"
-"uniform vec3 theColor;\n"
-"in vec3 Normal;\n"
-"void main()\n"
-"{\n"
-"vec3 norm = normalize(Normal);\n"
-"	float diff = max(dot(norm,vec3(1.0,0.0,0.0)),0.0);"
-"	vec3 diffuseColor = diff * theColor;\n"
-"   FragColor = vec4(diffuseColor, 1.0);\n"
-"}\n\0";
 
 int main()
 {
@@ -75,46 +53,7 @@ int main()
 		return -1;
 	}
 
-
-	// build and compile our shader program
-	// ------------------------------------
-	// vertex shader
-	int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-	glCompileShader(vertexShader);
-	// check for shader compile errors
-	int success;
-	char infoLog[512];
-	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-	}
-	// fragment shader
-	int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-	glCompileShader(fragmentShader);
-	// check for shader compile errors
-	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-	}
-	// link shaders
-	int shaderProgram = glCreateProgram();
-	glAttachShader(shaderProgram, vertexShader);
-	glAttachShader(shaderProgram, fragmentShader);
-	glLinkProgram(shaderProgram);
-	// check for linking errors
-	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-	if (!success) {
-		glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-	}
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
+	Shader shader("test.v.glsl", "test.f.glsl");
 
 	glEnable(GL_DEPTH_TEST);
 	// set up vertex data (and buffer(s)) and configure vertex attributes
@@ -224,28 +163,27 @@ int main()
 		glClearColor(red, 0.3f, 0.3f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// draw our first triangle
-		int colorLocation = glGetUniformLocation(shaderProgram, "theColor");
-		unsigned int transformLocation = glGetUniformLocation(shaderProgram, "transform");
-		int projectionLocation = glGetUniformLocation(shaderProgram, "projection");
-		int viewLocation = glGetUniformLocation(shaderProgram, "view");
+
 		glm::mat4 projection = glm::mat4(1.0f);
 		projection = glm::perspective(glm::radians(45.0f), (float)(800 / 600), 0.1f, 100.0f);
 
 		glm::mat4 trans = glm::mat4(1.0f);
-		trans = glm::translate(trans, glm::vec3(x,y,0.0f));
-		trans = glm::rotate(trans, rotation, glm::vec3(1.0f, 1.0f, 0.0f));
+		trans = glm::translate(trans, glm::vec3(x,y,z));
+		trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(1.0f, 1.0f, 0.0f));
 
 		glm::mat4 view = glm::mat4(1.0f);
 		// note that we're translating the scene in the reverse direction of where we want to move
 		view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
 
-		glUseProgram(shaderProgram);
-		glUniform3f(colorLocation, 0.2f, 0.7f, 0.5f);
-		//glUniform2f(transformLocation, x,y);
-		glUniformMatrix4fv(transformLocation, 1, GL_FALSE, glm::value_ptr(trans));
-		glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
-		glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
+
+		shader.use();
+		shader.setFloat3Uniform("theColor", 0.2f, 0.7f, 0.5f);
+		shader.setFloat3Uniform("lightPos", 0.0f,0.0f,1.0f);
+
+		shader.setMatrix4Uniform("transform", trans);
+		shader.setMatrix4Uniform("projection", projection);
+		shader.setMatrix4Uniform("view", view);
+
 		glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 		//glDrawElements(GL_TRIANGLES, 3*numTriangles, GL_UNSIGNED_INT, 0);
@@ -288,8 +226,11 @@ void processInput(GLFWwindow *window)
 	if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 		x += 0.001f;
 	}
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+		z -= 0.001f;
+	}
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-		rotation += 0.001f;
+		z += 0.001f;
 	}
 }
 
